@@ -1,39 +1,193 @@
-# History files
-.Rhistory
-.Rapp.history
+# Load Libraries ----
+library(dplyr)
+library(lubridate)
+#Load Data and preprocess----
+rm(list=ls())
+setwd("D:\\Data Prep\\Task\\2021_08_23")
+file.names=list.files("D:\\Data Prep\\Task\\2021_08_23")
+file.names=file.names[-1]
+# Bulk Import of all files in folder and renaming files
+df1=lapply(file.names,read.table)
+aux=gsub("access.","", file.names)
+aux=gsub(".gz","",aux)
+names(df1)=aux
+# Bind dataframes from list
+folder1=bind_rows(df1)
+rm(aux,file.names,df1)
+# 2nd folder data imported through the same procedure
+setwd("D:\\Data Prep\\Task\\2021_09_01")
+file.names2=list.files("D:\\Data Prep\\Task\\2021_09_01")
+file.names2=file.names2[-1]
+# Bulk Import of all files in folder 2 and renaming files
+df2=lapply(file.names2,read.table)
+aux=gsub("access.","", file.names2)
+aux=gsub(".gz","",aux)
+names(df2)=aux
+folder2=bind_rows(df2)
+rm(aux,file.names2,df2)
+#3rd folder import files to dataframe processing
+setwd("D:\\Data Prep\\Task\\2021_09_01\\2021_09_13")
+file.names3=list.files("D:\\Data Prep\\Task\\2021_09_13")
+file.names3=file.names3[-1]
+# Bulk Import of all files in folder 3 and renaming files
+df3=lapply(file.names3,read.table)
+aux=gsub("access.","", file.names3)
+aux=gsub(".gz","",aux)
+names(df3)=aux
+folder3=bind_rows(df3)
+rm(aux,file.names3,df3)
+# Bind the 3 dataframes from the three folders, all data 
+allfolders=bind_rows(folder1,folder2,folder3)#12247
+allfolders=allfolders[,-c(2,3,5,9)] #remove unnecessary columns - empty or irrelevant to our study 
+colnames(allfolders)=c("IP_address", "Date", "PageAccessandPath", "Server_resp_code", "Bytes_received", "User_agent")#name columns
+#Fix obvious inconsistencies and remove duplicates----
+# Check the class of each variable
+checkclass=data.frame(cl=sapply(allfolders,class),na=colSums(is.na(allfolders)))
+setwd("D:\\Data Prep\\final output")
+write.csv(checkclass,"checkclass.csv")
+rm(checkclass)
+# Fix date class with lubridate
+allfolders$Date=dmy_hms(allfolders$Date)
+#Remove duplicate rows
+allfolders=distinct(allfolders)#10048
+#Filtering data step by step, and more cleaning----
+aux1=grep("^GET",allfolders$PageAccessandPath)
+allGET=allfolders[aux1,]#8536 selecting all rows starting with GET
+aux2=grep("static|debug",allGET$PageAccessandPath,ignore.case=TRUE)#802, all rows containing the filter words
+#staticdebug=allGET[aux2,]#802
+outstaticdebug=allGET[-aux2,]#7734, after filtering out rows containing the "static" or "debug"
+allfilter=filter(outstaticdebug,Server_resp_code==200&Bytes_received>=3000)#1382 extracting the rows meeting the logical criteria
+rm(allfolders,allGET,folder1,folder2,folder3,outstaticdebug,aux1,aux2)
+auxbots=grep("bot|crawler|agent|research|scan|data|grab|http",allfilter$User_agent, ignore.case=TRUE)#499
+bots=allfilter[auxbots,]#499 bots
+windows()
+tiff("bots1.tif",units="in",width=6,height = 6,compression = "lzw",bg="white",res=300)
+slices=c(499,883)
+lbls=c("Bots","No bots")
+pct=round(slices/sum(slices)*100)
+lbls=paste(lbls, pct) # add percents to labels
+lbls=paste(lbls,"%",sep="") # ad % to labels
+pie(slices, labels = lbls, main="Bots vs Humans")
+dev.off()
+#unique(bots$IP_address)#219
+#sum(duplicated(bots$IP_address))#280
+clean=allfilter[-auxbots,]#883 observations without bots by keywords
+#Further cleaning of suspicious data in User agent field
+aux5=grep("^-",clean$User_agent)# 115 removing the missing UA observations starting with "-" as suspicious for being automated requests
+#missingUA=clean[aux5,]
+clean=clean[-aux5,]#768 after removing the missing observations "-" in UA
+#unique(clean$User_agent)# after discussions with client and further research removing suspicious bots and crawlers "curl/7.64.1" ,"Embarcadero URI Client/1.0" , "curl/7.55.0"  , "curl/7.78.0" ,"GRequests/0.10" , "l9tcpid/v1.1.0", "python-requests/2.26.0". N.B. "panscient.com" we do not filter it because it contains substantial requests to the blog section and for presentation purposes we keep these data 
+aux6=grep(("curl/7.64.1|Embarcadero URI Client/1.0|curl/7.55.0|curl/7.78.0|GRequests/0.10|l9tcpid/v1.1.0|python-requests/2.26.0"), clean$User_agent)#26 in total (72.79.45.44 - panscient.com 87, if we add it 113)
+morerobots=clean[aux6,]#26 /excluding panscient which appears 87 times/
+windows()
+tiff("bots2.tif",units="in",width=6,height = 6,compression = "lzw",bg="white",res=300)
+slices=c(499,26,655,87,115)
+lbls=c("Bots by keyword","More Bots and crawlers","Humans","panscient.com","Missing UA")
+pct=round(slices/sum(slices)*100)
+lbls=paste(lbls, pct) # add percents to labels
+lbls=paste(lbls,"%",sep="") # ad % to labels
+pie(slices, labels = lbls, main="User Agent - Bots,Humans,Crawlers,Suspicious,Missing")
+dev.off()
+clean=clean[-aux6,]#742 observations after cleaning additional detected robots, crawlersm and NAs
+rm(missingUA,morerobots,aux5,aux6,auxbots,lbls,pct,slices,bots,allfilter)
+#Adding columns to table----
+#For the Web site sections
+clean$MainPage=!grepl("about|blog|career|report|contact|family",clean$PageAccessandPath,ignore.case=T)#616 main page
+clean$About=grepl("about",clean$PageAccessandPath,ignore.case=T)
+clean$Blog=grepl("blog",clean$PageAccessandPath,ignore.case=T)
+clean$Careers=grepl("career",clean$PageAccessandPath,ignore.case=T)
+clean$Reporting=grepl("report",clean$PageAccessandPath,ignore.case=T)
+clean$Contact=grepl("contact",clean$PageAccessandPath,ignore.case=T)
+clean$Fam_Council=grepl("familycouncil",clean$PageAccessandPath,ignore.case=T)
+#More columns derived from the Date
+clean$Day=day(clean$Date)
+clean$Month=month(clean$Date)
+clean$Week=week(clean$Date)
+clean$Weekday=weekdays(clean$Date)
+clean$Weekday=as.factor(clean$Weekday)
+clean$Weekday=ordered(clean$Weekday, levels=c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+#More columns for Author and their Articles in the Blog Section
+clean$Nicholas=grepl("Nicholas|Family-Wealth-Four-Types-Of-Capital|Keeping-Together-3-Gens",clean$PageAccessandPath,ignore.case=T)
+clean$Elena=grepl("Elena|Active-vs-Passive-Investing",clean$PageAccessandPath,ignore.case=T)
+clean$Rebeka=grepl("Rebeka|How-to-create-a-unique-logo|Financial-Branding-With-Videos-Enhance-Your-Website-Design",clean$PageAccessandPath,ignore.case=T)
+clean$Sherry=grepl("Sherry|How-To-Build-An-Awesome-Team|Streamlining-the-Onboarding-Process|Writing-Your-Companys-Values-for-Long-Term-Success",clean$PageAccessandPath,ignore.case=T)
+clean$Maria=grepl("Maria|People-dont-leave-their-jobs-they-leave-their-managers|Let%E2%80%99s-Celebrate-Project-Managers|5-Reasons-that-Projects-Get-Delayed|Working-In-Pajamas-A-Guide-To-Productivity",clean$PageAccessandPath,ignore.case=T)
+clean$Zara=grepl("Zara|Why-Should-People-Invest-In-Gold|How-do-I-choose-an-asset-manager%3F",clean$PageAccessandPath,ignore.case=T)
+#Module3/Outputs aggregated data----
+#Descriptive statistics and analysis
+summary(clean)
+clean=clean%>%
+  arrange(Date)
+#unique(clean$IP_address)#267
+#1)Unique IP addresses - unique and repeated visits
+ddaggregated=clean %>%
+  group_by(IP_address)%>%
+  summarise(count=n())
+ddaggregated=as.data.frame(ddaggregated)
+write.csv(ddaggregated,"uniqueIP.csv")
+uniqueIP=ddaggregated[ddaggregated$count==1,]#211
+repeatedIP=ddaggregated[ddaggregated$count>1,]#56
+rm(uniqueIP,repeatedIP,ddaggregated)
+#2) Most visited weekdays
+mostvisiteddays=clean%>%
+  group_by(Weekday)%>%
+  summarise(count=n())
+mostvisiteddays=as.data.frame(mostvisiteddays)
+windows()
+tiff("Fig1.tif",units="in",width=12,height = 6,compression = "lzw",bg="white",res=300)
+barpos=barplot(mostvisiteddays$count,col="orange",lwd=2, main="Cumulative Visits by weekday",axes=F,xlab="",ylab="number of visits")
+axis(side=1,at=barpos, labels=(mostvisiteddays$Weekday),las=2)
+axis(side=2,at=c(0,65,80,100,115,203),las=2)
+dev.off()
+rm(barpos,mostvisiteddays)
+#3) Visits by day
+dataDay=clean%>%
+  group_by(Month,Day, Weekday)%>%
+  summarise(count=n())
+windows()
+tiff("Fig2.tif",units="in",width=12,height = 6,compression = "lzw",bg="white",res=300)
+bar_pos=barplot(dataDay$count,col="blue", main="Daily site visits",xlab="days",ylab="number of visits", col.lab="blue", cex.lab=0.75)
+axis(side=1,at=bar_pos,labels=paste(dataDay$Day,dataDay$Month,sep="/"),las=2)
+dev.off()
+rm(bar_pos,dataDay)
+#4) Blog visits
+datablog=clean%>%
+  group_by(PageAccessandPath)%>%
+  summarise(count=n())
+datablog=as.data.frame(datablog)
+write.csv(datablog,"blog.csv")
+#147.135.137.126  "GET /?author=1 HTTP/1.1" #N.B.possible attack to the website,
+#GET /?format=feed&type=rss HTTP/1.1 N.B discuss with client
+rm(datablog)
+#More Graphs and aggregated data
+#Website sections
+dfwebsections=clean[,c("MainPage","About","Blog","Careers","Reporting","Contact","Fam_Council")]
+colSums(dfwebsections[,1:7])
+# MainPage       About        Blog     Careers   Reporting     Contact Fam_Council 
+#510          14         177           8           9          15          9 
+newdf=cbind.data.frame(c("MainPage", "About","Blog", "Careers", "Reporting", "Contact", "Fam_Council","Subtotal"),c(510,14,177,8,9,15,9,sum(510,14,177,8,9,15,9)))
+names(newdf)=c("WebSections","Visits")
+write.csv(newdf,"Websections.csv")
+rm(dfwebsections,newdf)
+#byAuthor and their Articles in the Blog
+sum(clean$Nicholas)#50
+sum(clean$Elena)#6
+sum(clean$Rebeka)#9
+sum(clean$Sherry)#24
+sum(clean$Maria)#17
+sum(clean$Zara)#15
+windows()
+tiff("BlogArticlesandAuthors.tif",units="in",width=6,height = 6,compression = "lzw",bg="white",res=300)
+slices=c(50,24,17,15,9,6)
+lbls=c("Nicholas","Sherry","Maria","Zara","Rebeka","Elena")
+pct=round(slices/sum(slices)*100)
+lbls=paste(lbls, pct) # add percents to labels
+lbls=paste(lbls,"%",sep="") # ad % to labels
+pie(slices, labels = lbls, main="Blog visits - Authors and their Articles")
+dev.off()
+rm(lbls,pct,slices)
+#User journey explorations
+#Most repeated IP addresses - explaining the peaks on 30/08 and 9/09
+clean[clean$IP_address=="72.79.45.44",c(1,2,3,6)]#87 times, panscient.com on 30 August from 06:54:25 to 06:57:39 
+clean[clean$IP_address=="84.115.232.118",c(1,2,3,6)]#45 times repeated IP on 9.9.2020 from 15:34:04  till 16:31:51 browsed the website
 
-# Session Data files
-.RData
-
-# User-specific files
-.Ruserdata
-
-# Example code in package build process
-*-Ex.R
-
-# Output files from R CMD build
-/*.tar.gz
-
-# Output files from R CMD check
-/*.Rcheck/
-
-# RStudio files
-.Rproj.user/
-
-# produced vignettes
-vignettes/*.html
-vignettes/*.pdf
-
-# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
-.httr-oauth
-
-# knitr and R markdown default cache directories
-*_cache/
-/cache/
-
-# Temporary files created by R markdown
-*.utf8.md
-*.knit.md
-
-# R Environment Variables
-.Renviron
