@@ -89,7 +89,7 @@ lbls=paste(lbls,"%",sep="") # ad % to labels
 pie(slices, labels = lbls, main="User Agent - Bots,Humans,Crawlers,Suspicious,Missing")
 dev.off()
 clean=clean[-aux6,]#742 observations after cleaning additional detected robots, crawlersm and NAs
-rm(missingUA,morerobots,aux5,aux6,auxbots,lbls,pct,slices,bots,allfilter)
+rm(morerobots,aux5,aux6,auxbots,lbls,pct,slices,bots,allfilter)
 #Adding columns to table----
 #For the Web site sections
 clean$MainPage=!grepl("about|blog|career|report|contact|family",clean$PageAccessandPath,ignore.case=T)#616 main page
